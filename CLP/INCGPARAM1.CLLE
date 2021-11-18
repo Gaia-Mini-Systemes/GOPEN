@@ -1,0 +1,9 @@
+/*------------------------------------------------------------*/
+/* INCLUDE POUR UTILISATION GPARAMC                           */
+/* déclaration des paramètres                                 */
+/*------------------------------------------------------------*/
+   DCL &LIB       *CHAR 10
+   DCL &MAIL      *CHAR 50
+   DCL &CLE       *CHAR 52
+   DCL &GVERSION  *CHAR 4
+   DCL &GLOG      *CHAR 10

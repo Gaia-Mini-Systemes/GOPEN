@@ -1,0 +1,76 @@
+             pgm        parm(&silent)
+
+             /* Récupération des paramètres GOPEN (déclaration) */
+             include    INCGPARAM1
+
+             /* Déclaration des variables qu'on utilise plus bas */
+             dcl        &tmpstr *CHAR 2048
+             dcl        &outfile *CHAR 256
+             dcl        &csvout *CHAR 256
+             dcl        &updcnt *DEC (10 0)
+             dcl        &silent *LGL
+
+             /* Changement du jeu de caractères */
+             chgjob     ccsid(1147)
+
+             /* Récupération des paramètres GOPEN (CL) */
+             include    INCGPARAM2
+
+             /* On récupère le dernier index des mises à jour */
+             chgvar     &outfile 'chkupd'
+             chgvar     &tmpstr 'yum check-update'
+             call       pgm(QSHEXEC) parm(&tmpstr &outfile)
+
+             /* Packages installés dans qtemp/ins */
+             chgvar     &outfile 'ins'
+             chgvar     &tmpstr 'installed'
+             call       pgm(YUMLST) parm(&tmpstr &outfile)
+
+             /* Packages qui peuvent être mis à jour dans qtemp/upd */
+             chgvar     &outfile 'upd'
+             chgvar     &tmpstr 'updates'
+             call       pgm(YUMLST) parm(&tmpstr &outfile)
+
+             /* On met la liste complète des mises à jour dans qtemp/gopenlst */
+             dltf       file(qtemp/gopenlst)
+             monmsg     CPF0000
+             runsql     sql('create table qtemp/gopenlst (PKG CHAR(64) CCSID 1147 NOT NULL +
+                          DEFAULT '''', VERINS CHAR(32) CCSID 1147 NOT NULL DEFAULT '''', +
+                          VERMAJ CHAR(32) CCSID 1147 NOT NULL DEFAULT '''')') commit(*none)
+             runsql     sql('insert into qtemp/gopenlst (PKG, VERMAJ) select PKG, VER from +
+                          qtemp/upd') commit(*none)
+             runsql     sql('update qtemp/gopenlst lst set VERINS = (select VER from qtemp/ins +
+                          ins where ins.PKG = lst.PKG)') commit(*none)
+
+             /* On filtre les packages à mettre à jour pour ne garder que ceux qu'on surveille */
+             /* Puisqu'on a récupéré la version la plus récente des packages installés/à       */
+             /* mettre à jour on peut effacer le contenu précédent de la table                 */
+             runsql     sql('delete from lstpkgmaj') commit(*none)
+             runsql     sql('insert into lstpkgmaj select * from qtemp/gopenlst I where +
+                          exists(select PKG from lstpkg J where trim(lower(I.PKG)) like ''' +
+                          *TCAT '%' *TCAT ''' concat trim(lower(J.PKG)) concat ''' *TCAT '%' +
+                          *TCAT ''')') commit(*none)
+
+             if         cond(&silent *EQ '1') then(return)
+
+             /* On vérifie si on a des mises à jour disponibles */
+             rtvmbrd    file(lstpkgmaj) nbrcurrcd(&updcnt)
+
+             if         cond(&updcnt *EQ 0) then(do)
+                sndsmtpemm rcp(&MAIL) subject('Aucune mise à jour open-source à faire') +
+                             note('Aucune mise à jour de produits open-source n''est +
+                             disponible') content(*html)
+             enddo
+             else       do
+                /* On exporte ces résultats en CSV */
+                chgvar     &csvout '/tmp/gopen_lstpkgmaj.csv'
+                cpytoimpf  fromfile(lstpkgmaj) tostmf(&csvout) mbropt(*replace) +
+                             stmfccsid(*pcascii) rcddlm(*crlf) strdlm(*none) flddlm(',') +
+                             rmvblank(*both) addcolnam(*sql)
+
+                /* On envoie par email la notification de mises à jour avec le CSV */
+                sndsmtpemm rcp(&MAIL) subject('Des mises à jour open-source sont disponibles') +
+                             note('Ci-joint la liste des packages au format CSV') +
+                             attach(&csvout) content(*html)
+             enddo
+             endpgm

@@ -1,0 +1,8 @@
+*
+*  Historique des versions
+*
+0100
+Version de base
+  Contrôle de la version
+  Gestion des modules à contrôler
+  Gestion de la mise à jour des modules identifiées

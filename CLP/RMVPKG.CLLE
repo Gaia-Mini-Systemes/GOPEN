@@ -1,0 +1,17 @@
+pgm parm(&pkg)
+dcl &pkg *char 30
+dcl &sql *char 1000
+RUNSQL     SQL('DELETE FROM lstpkg WHERE lower(PKG)     = ''' *TCAT %lower(&pkg)     *TCAT +
+             '''') COMMIT(*NONE)
+
+
+             MONMSG     MSGID(SQL0000 SQ20000 SQ30000) EXEC(DO)
+                SNDUSRMSG  MSG('* Attention *,  package ,' *BCAT &pkg    +
+                     *bcat 'non supprimé') +
+                             MSGTYPE(*INFO)
+                RETURN
+             ENDDO
+             SNDUSRMSG  MSG('Package,' *BCAT &pkg     *BCAT +
+                          'supprimé de la liste.   ') MSGTYPE(*INFO)
+                RETURN
+endpgm

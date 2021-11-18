@@ -1,0 +1,59 @@
+ pgm &p_ver
+/*---------------------------------------------------------*/
+/* iinitialisation du produit                              */
+/*---------------------------------------------------------*/
+ dcl        &p_ver *char 04 /* version */
+ dcl        &repertdft *char 30
+ dcl        &p_lib *char 10
+ dcl        &sql   *char 500
+ dcl        &nbr   *dec  10
+ include    INCGPARAM1
+             RTVOBJD    OBJ(GPARAM) OBJTYPE(*FILE) RTNLIB(&P_LIB)
+ /*                                            */
+ /*   chgvar des zones de GPARAM               */
+ /*                                            */
+  chgvar   &LIB       value(&P_LIB)
+  chgvar   &MAIL      value('votre@mail.com')
+  chgvar   &CLE        +
+ value('KsfT1sfDK9TEQEDxQPn5KPnxKPHw+EvxS/DxKGzExfXU1lxCKvDw')
+  chgvar   &GVERSION  value(&p_ver)
+  chgvar   &GLOG      value('GLOGCMD   ')
+
+
+/* Initialisation du paramètrage */
+             RTVMBRD    FILE(&P_LIB/GPARAM) NBRCURRCD(&NBR)
+             if cond(&nbr = 0) then(do)
+     /*                                      */
+     /* insert pour : GPARAM    */
+     /*                                     */
+      chgvar &sql  (   +
+ ' INSERT INTO GPARAM     VALUES(''' +
+  *tcat &LIB        *tcat ''', ''' +
+  *tcat &MAIL       *tcat ''', ''' +
+  *tcat &CLE        *tcat ''', ''' +
+  *tcat &GVERSION   *tcat ''', ''' +
+  *tcat &GLOG       *tcat ''') +
+ ')
+ enddo
+ else do
+/* Mise à jour version */
+ chgvar     &sql value('+
+    UPDATE GPARAM SET GVERSION = ''' *tcat &p_ver *tcat  '''')
+ enddo
+ /**/
+ RUNSQL     SQL(&SQL) COMMIT(*NONE) NAMING(*Sys)
+
+/* lecture des paramètres                                           */
+ include    INCGPARAM2
+/*------------------------------------------------------------------*/
+/* initialisation du logiciel                                       */
+/*------------------------------------------------------------------*/
+ /* mise en place des doits necessaires */
+ CHGOBJOWN  OBJ(&lib/GPARAM) OBJTYPE(*PGM) NEWOWN(QSECOFR)
+ CHGPGM     PGM(&lib/GPARAM) USRPRF(*OWNER)
+ CHGOBJOWN  OBJ(&lib/GPARAMC) OBJTYPE(*PGM) NEWOWN(QSECOFR)
+ CHGPGM     PGM(&lib/GPARAMC) USRPRF(*OWNER)
+ CHGOBJOWN  OBJ(&lib/SNDLOGC) OBJTYPE(*PGM) NEWOWN(QSECOFR)
+ CHGPGM     PGM(&lib/SNDLOGC) USRPRF(*OWNER)
+
+endpgm

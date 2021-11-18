@@ -1,0 +1,147 @@
+             pgm        parm(&pkg)
+
+             /* Récupération des paramètres GOPEN (déclaration) */
+             include    INCGPARAM1
+
+             dcl        &pkg *CHAR 64
+
+             dcl        &tmpstr *CHAR 2048
+             dcl        &outlog *CHAR 10
+             dcl        &outlogf *CHAR 10
+             dcl        &outpre *CHAR 10
+             dcl        &outpost *CHAR 10
+             dcl        &outdiff *CHAR 10
+             dcl        &csvlog *CHAR 128
+             dcl        &csvdiff *CHAR 128
+             dcl        &pkgcnt *DEC (10 0)
+
+             dclf       file(lstpkgmaj)
+
+             /* Changement du jeu de caractères */
+             chgjob     ccsid(1147)
+
+             /* Récupération des paramètres GOPEN (CL) */
+             include    INCGPARAM2
+
+             /* On stocke la liste des packages installés avant tout changement */
+             chgvar     &outpre 'inspre'
+             chgvar     &tmpstr 'installed'
+             call       pgm(YUMLST) parm(&tmpstr &outpre)
+
+             /* Mise à jour de &pkg et on récupère le résultat de la commande */
+             /* Sortie de QSH */
+             chgvar     &outlog 'updlog'
+
+             /* Sortie de QSH ré-insérée avec le CCSID 1147 */
+             /* Permet aussi de merge les logs de plusieurs yum pour *LSTPKG */
+             chgvar     &outlogf 'updlogf'
+
+             /* Il faut insérer le log brut dans une table avec un CCSID légal pour pouvoir   */
+             /* exporter en CSV correctement, sinon l'encodage est cassé et le texte illisible */
+             dltf       file(qtemp/&outlogf)
+             monmsg     CPF0000
+             runsql     sql('create table qtemp/' *TCAT &outlogf *BCAT '(LOG CHAR(1024) CCSID +
+                          1147 NOT NULL DEFAULT '''')') commit(*none)
+
+             /* Si on a *ALL, on fait un 'yum update -y' pour tout mettre à jour */
+             if         cond(&pkg *EQ *ALL) then(do)
+                sndusrmsg  msg('Êtes-vous sûr(e) de vouloir mettre tous les packages à jour? +
+                             [y/N]') msgtype(*INQ) values(Y N) dft(N) msgrpy(&tmpstr)
+                if         cond(%UPPER(&tmpstr) *EQ 'Y') then(do)
+                   chgvar     &tmpstr 'yum update -y'
+                   call       pgm(QSHEXEC) parm(&tmpstr &outlog)
+                   runsql     sql('insert into qtemp/' *TCAT &outlogf *BCAT ' select * from +
+                                qtemp/' *TCAT &outlog) commit(*none)
+                enddo
+                else       do
+                   sndusrmsg  msg('Annulé') msgtype(*INFO)
+                   return
+                enddo
+             enddo
+             /* Si on a *LSTPKG on met à jour chaque package présent dans LSTPKGMAJ */
+             else       if cond(&pkg *EQ *LSTPKG) then(do)
+ rcvnext:       rcvf
+                monmsg     msgid(CPF0864) exec(goto lpmcmd)
+
+                chgvar     &tmpstr ('yum update -y ''' *TCAT &pkg *TCAT '''')
+                call       pgm(QSHEXEC) parm(&tmpstr &outlog)
+                runsql     sql('insert into qtemp/' *TCAT &outlogf *BCAT ' select * from +
+                             qtemp/' *TCAT &outlog) commit(*none)
+                goto       rcvnext
+
+ lpmcmd:        chgvar     &pkg '*LSTPKG'
+             enddo
+             /* Sinon on met à jour le package donné en paramètre */
+             else       do
+                chgvar     &tmpstr ('yum update -y ''' *TCAT %LOWER(&pkg) *TCAT '''')
+                call       pgm(QSHEXEC) parm(&tmpstr &outlog)
+                runsql     sql('insert into qtemp/' *TCAT &outlogf *BCAT ' select * from +
+                             qtemp/' *TCAT &outlog) commit(*none)
+             enddo
+
+             /* On stocke la liste des packages installés après la mise à jour */
+             chgvar     &outpost 'inspost'
+             chgvar     &tmpstr 'installed'
+             call       pgm(YUMLST) parm(&tmpstr &outpost)
+
+             /* On va créer une table pour stocker chaque package qui a subi un changement */
+             /* de version.                                                                */
+             chgvar     &outdiff 'insdiff'
+             dltf       file(qtemp/&outdiff)
+             monmsg     CPF0000
+             runsql     sql('create table qtemp/' *TCAT &outdiff *BCAT '(PKG CHAR(64) CCSID +
+                          1147 NOT NULL DEFAULT '''', VERINS CHAR(32) CCSID 1147 NOT NULL +
+                          DEFAULT '''', VERMAJ CHAR(32) CCSID 1147 NOT NULL DEFAULT '''')') +
+                          commit(*none)
+             runsql     sql('insert into qtemp/' *TCAT &outdiff *BCAT '(PKG, VERINS) select +
+                          PKG, VER from qtemp/' *TCAT &outpre *BCAT 'I where exists(select * +
+                          from qtemp/' *TCAT &outpost *BCAT 'J where I.PKG = J.PKG and I.VER +
+                          <> J.VER)') commit(*none)
+             runsql     sql('update qtemp/' *TCAT &outdiff *BCAT 'I set VERMAJ = (select VER +
+                          from qtemp/' *TCAT &outpost *BCAT 'J where I.PKG = J.PKG)') +
+                          commit(*none)
+
+             /* On exporte ces résultats en CSV (le log est toujours envoyé mais pas la liste */
+             /* des packages modifiés donc on ne l'exporte que si on l'envoie par email       */
+             chgvar     &csvlog '/tmp/gopen_updpkg_log.csv'
+             cpytoimpf  fromfile(qtemp/&outlogf) tostmf(&csvlog) mbropt(*replace) +
+                          stmfccsid(*pcascii) rcddlm(*crlf) strdlm(*none) flddlm(',') +
+                          rmvblank(*both) addcolnam(*sql)
+
+             /* On envoie par email la notification de mises à jour avec le CSV              */
+             /* Si on a 0 packages mis à jour dans la liste, alors aucun package n'a subi de */
+             /* changement donc de mise à jour                                               */
+             rtvmbrd    file(qtemp/&outdiff) nbrcurrcd(&pkgcnt)
+
+             /* Juste avant d'envoyer le mail on va retirer tous les packages de LSTPKGMAJ    */
+             /* qui ont été modifiés. Comme ça on évite d'envoyer un email si on rencontre    */
+             /* une erreur à cette étape                                                      */
+             chgvar     &tmpstr ('delete from lstpkgmaj I where exists(select PKG from qtemp/' +
+                          *TCAT &outdiff *BCAT 'J where lower(I.PKG) = lower(J.PKG))')
+             runsql     sql(&tmpstr) commit(*none)
+
+             if         cond(&pkgcnt *EQ 0) then(do)
+                /* 0 packages dans la diff, donc rien n'a été mis à jour, on envoie le mail */
+                chgvar     &tmpstr ('Une mise à jour de ''' *TCAT &pkg *TCAT ''' a été +
+                             demandée mais aucun package n''avait de mise à jour disponible.')
+                sndsmtpemm rcp(&MAIL) subject('Aucune mise à jour open-source effectuée') +
+                             note(&tmpstr) attach(&csvlog) content(*html)
+             enddo
+             else       do
+                /* Un ou plusieurs packages ont été mis à jour */
+
+                /* On exporte la liste des packages modifiés */
+                chgvar     &csvdiff '/tmp/gopen_updpkg_diff.csv'
+                cpytoimpf  fromfile(qtemp/&outdiff) tostmf(&csvdiff) mbropt(*replace) +
+                             stmfccsid(*pcascii) rcddlm(*crlf) strdlm(*none) flddlm(',') +
+                             rmvblank(*both) addcolnam(*sql)
+
+                /* Et on envoie le mail */
+                chgvar     &tmpstr ('Une mise à jour de ''' *TCAT &pkg *TCAT ''' a été +
+                             effectuée. Ci-joint la liste de tous les packages modifiés et le +
+                             log de la mise à jour.')
+                sndsmtpemm rcp(&MAIL) subject('Des mises à jour open-source ont été +
+                             effectuées') note(&tmpstr) attach(&csvlog &csvdiff) content(*html)
+             enddo
+
+             endpgm

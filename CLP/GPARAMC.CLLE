@@ -1,0 +1,33 @@
+/*------------------------------------------------------------*/
+/* RÉCUPÉRATION DES PARAMETRES  GOPEN                         */
+/* Ajout controle de paramétrage                              */
+/* *ERREUR* Si fichier vide ou si lecture impossible          */
+/*------------------------------------------------------------*/
+ PGM PARM(+
+    &LIB       +
+    &MAIL      +
+    &CLE       +
+    &GVERSION  +
+    &GLOG      +
+ )
+             copyright ('GAIA')
+             dcl &nbr *dec (10 0)
+             dcl &libp *char 10
+             DCLF       GPARAM
+             RTVOBJD    OBJ(Gopen  ) OBJTYPE(*PGM) RTNLIB(&LIBP)
+/* test si paramétrage  dans gparam                           */
+             RTVMBRD    FILE(&libp/GPARAM) NBRCURRCD(&NBR)
+             if (&nbr = 0) then(do)
+             chgvar &lib ('*ERREUR*')
+             return
+             enddo
+ /* Lecture du paramétrage              */
+             RCVF
+             monmsg cpf0864 exec(do)
+             SNDUSRMSG  MSG('Lecture du paramétrage impossible.') +
+                          MSGTYPE(*INFO)
+             chgvar &lib ('*ERREUR*')
+             enddo
+             DLTOVR     FILE(GENVOI)
+             monmsg CPF9841
+ ENDPGM:     ENDPGM

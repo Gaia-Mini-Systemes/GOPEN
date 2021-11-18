@@ -1,0 +1,17 @@
+/*------------------------------------------------------------*/
+/* INCLUDE POUR UTILISATION GPARAMC                           */
+/* Appel du programme gparamc                                 */
+/*------------------------------------------------------------*/
+/* si pas de paramètres */
+ CALL GPARAMC PARM(+
+    &LIB       +
+    &MAIL      +
+    &CLE       +
+    &GVERSION  +
+    &GLOG      +
+ )
+             if cond(&lib = '*ERREUR*') then(do)
+             SNDUSRMSG  MSG('Vous devez d''abord paramétrer le +
+                          logiciel.') MSGTYPE(*INFO)
+             return
+             enddo

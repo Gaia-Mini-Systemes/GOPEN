@@ -1,0 +1,42 @@
+             pgm        parm(&qshcmd &qtempout)
+             /* Exécute une commande QSH et stocke le résultat dans qtemp/&qtempout  */
+
+             /* Déclaration des variables qu'on utilise plus bas */
+             dcl        &qshcmd *CHAR 2048 /* Commande QSH */
+             dcl        &qshcmdfull *CHAR 2048 /* Commande QSH finale (avec le PATH) */
+             dcl        &qtempout *CHAR 10 /* Table où stocker le résultat sur QTEMP */
+             dcl        &ifsout *CHAR 256 /* Fichier où stocker la sortie sur l'IFS */
+             dcl        &tmpstr *CHAR 256
+
+             /* Fichier vers lequel on stockera la sortie de la commande */
+             chgvar     &ifsout '/tmp/gopenqshexec.txt'
+
+             /* Préparation des variables d'environnement CL pour strqsh */
+             chgvar     &tmpstr ('FILE=' *TCAT &ifsout)
+             chgenvvar  envvar(QIBM_QSH_CMD_OUTPUT) value(&tmpstr)
+             monmsg     msgid(CPFA981) exec(addenvvar  envvar(QIBM_QSH_CMD_OUTPUT) +
+                          value(&tmpstr))
+             chgvar     &tmpstr 'Y'
+             chgenvvar  envvar(QIBM_QSH_CMD_ESCAPE_MSG) value(&tmpstr)
+             monmsg     msgid(CPFA981) exec(addenvvar envvar(QIBM_QSH_CMD_ESCAPE_MSG) +
+                          value(&tmpstr))
+             chgenvvar  envvar(QSH_USE_PRESTART_JOB) value(&tmpstr)
+             monmsg     msgid(CPFA981) exec(addenvvar envvar(QSH_USE_PRESTART_JOB) +
+                          value(&tmpstr))
+
+             /* On prépare la commande avec le PATH défini puis on l'exécute */
+             chgvar     &qshcmdfull ('PATH=/QOpenSys/pkgs/bin:$PATH' *BCAT &qshcmd)
+             strqsh     cmd(&qshcmdfull)
+             monmsg     msgid(QSH0000)
+
+             /* On prépare la table qtemp/&qtempout pour y stocker le résultat */
+             dltf       file(qtemp/&qtempout)
+             monmsg     CPF0000
+             crtpf      file(qtemp/&qtempout) rcdlen(1024)
+             clrpfm     file(qtemp/&qtempout)
+
+             /* On copie le résultat depuis l'IFS sur QTEMP/&qtempout */
+             cpyfrmstmf fromstmf(&ifsout) tombr('/QSYS.LIB/QTEMP.LIB/' *TCAT %UPPER(&qtempout) +
+                          *TCAT '.FILE/' *TCAT %UPPER(&qtempout) *TCAT '.MBR') mbropt(*REPLACE)
+
+             endpgm
